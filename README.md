@@ -1,5 +1,7 @@
 # near-api-py
 
+## This is and extension of the near-api-py repository
+
 *Status: super rough, APIs are subject to change*
 
 A Python library for development of applications that are using NEAR platform.
