@@ -1,14 +1,19 @@
 from setuptools import setup, find_packages
 
+with open("README.md", "r") as fh:
+    long_description = fh.read()
+
 META_DATA = dict(
-    name="near-api-py",
-    version="0.1.0",
+    name="lzr-near-api-py",
+    version="0.1.1",
     license="MIT",
 
     author="NEAR Inc",
 
     url="https://github.com/near/near-api-py",
 
+    long_description=long_description,
+    long_description_content_type="text/markdown",
     packages=find_packages(),
 
     install_requires=["requests", "base58", "ed25519"]
