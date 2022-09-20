@@ -31,12 +31,13 @@ class Account(object):
         self._signer = signer
         self._account_id = account_id or self._signer.account_id
         self._account: dict = provider.get_account(self._account_id)
-        self._access_key: dict = provider.get_access_key(self._account_id, self._signer.key_pair.encoded_public_key())
-        # print(account_id, self._account, self._access_key)
+        self._access_key: dict = provider.get_access_key(
+            self._account_id, self._signer.key_pair.encoded_public_key())
 
     def _sign_and_submit_tx(self, receiver_id: str, actions: list['transactions.Action']) -> dict:
         self._access_key['nonce'] += 1
-        block_hash = self._provider.get_status()['sync_info']['latest_block_hash']
+        block_hash = self._provider.get_status(
+        )['sync_info']['latest_block_hash']
         block_hash = base58.b58decode(block_hash.encode('utf8'))
         serialized_tx = transactions.sign_and_serialize_transaction(
             receiver_id, self._access_key['nonce'], actions, block_hash, self._signer)
@@ -88,7 +89,8 @@ class Account(object):
         args = json.dumps(args).encode('utf8')
         return self._sign_and_submit_tx(
             contract_id,
-            [transactions.create_function_call_action(method_name, args, gas, amount)]
+            [transactions.create_function_call_action(
+                method_name, args, gas, amount)]
         )
 
     def create_account(self, account_id: str, public_key: str, initial_balance: int) -> dict:
@@ -116,10 +118,10 @@ class Account(object):
             initial_balance: int
     ) -> dict:
         actions = [
-                      transactions.create_create_account_action(),
-                      transactions.create_transfer_action(initial_balance),
-                      transactions.create_deploy_contract_action(contract_code)
-                  ] + ([transactions.create_full_access_key_action(public_key)] if public_key is not None else [])
+            transactions.create_create_account_action(),
+            transactions.create_transfer_action(initial_balance),
+            transactions.create_deploy_contract_action(contract_code)
+        ] + ([transactions.create_full_access_key_action(public_key)] if public_key is not None else [])
         return self._sign_and_submit_tx(contract_id, actions)
 
     def create_deploy_and_init_contract(
@@ -134,17 +136,20 @@ class Account(object):
     ) -> dict:
         args = json.dumps(args).encode('utf8')
         actions = [
-                      transactions.create_create_account_action(),
-                      transactions.create_transfer_action(initial_balance),
-                      transactions.create_deploy_contract_action(contract_code),
-                      transactions.create_function_call_action(init_method_name, args, gas, 0)
-                  ] + ([transactions.create_full_access_key_action(public_key)] if public_key is not None else [])
+            transactions.create_create_account_action(),
+            transactions.create_transfer_action(initial_balance),
+            transactions.create_deploy_contract_action(contract_code),
+            transactions.create_function_call_action(
+                init_method_name, args, gas, 0)
+        ] + ([transactions.create_full_access_key_action(public_key)] if public_key is not None else [])
         return self._sign_and_submit_tx(contract_id, actions)
 
     def view_function(self, contract_id: str, method_name: str, args: Optional[dict] = None) -> dict:
         """NEAR view method."""
-        result = self._provider.view_call(contract_id, method_name, json.dumps(args).encode('utf8'))
+        result = self._provider.view_call(
+            contract_id, method_name, json.dumps(args).encode('utf8'))
         if "error" in result:
             raise ViewFunctionError(result['error'])
-        result['result'] = json.loads(''.join([chr(x) for x in result['result']]))
+        result['result'] = json.loads(
+            ''.join([chr(x) for x in result['result']]))
         return result
