@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 META_DATA = dict(
     name="lzr-near-api-py",
-    version="0.1.1",
+    version="0.1.2",
     license="MIT",
 
     author="NEAR Inc",
@@ -16,7 +16,7 @@ META_DATA = dict(
     long_description_content_type="text/markdown",
     packages=find_packages(),
 
-    install_requires=["requests", "base58", "ed25519"]
+    install_requires=["requests", "urllib3", "base58", "ed25519"]
 )
 
 if __name__ == "__main__":
