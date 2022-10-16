@@ -1,10 +1,30 @@
 import base64
 import json
 from typing import Union, Optional
+import logging
 from urllib3.util import Retry
 from requests.adapters import HTTPAdapter
 
 import requests
+
+logger = logging.getLogger(__name__)
+
+
+def _default_retry_strategy() -> Retry:
+    retry_backoff_factor = 1.0
+    total_retries = 5
+    connection_timeout = 10
+    read_timeout = 15
+    method_whitelist = ["GET", "POST"]
+
+    retry_strategy = Retry(
+        total=total_retries,
+        backoff_factor=retry_backoff_factor,
+        connect=connection_timeout,
+        read=read_timeout,
+        status_forcelist=[502, 503],
+        allowed_methods=method_whitelist)
+    return retry_strategy
 
 
 class FinalityTypes:
@@ -17,31 +37,19 @@ class JsonProviderError(Exception):
 
 
 class JsonProvider(object):
-    def __init__(self, rpc_addr, proxies=None):
+    def __init__(self, rpc_addr, proxies=None,
+                 retry_strategy: Retry = _default_retry_strategy()):
         if isinstance(rpc_addr, tuple):
             self._rpc_addr = "http://%s:%s" % rpc_addr
         else:
             self._rpc_addr = rpc_addr
-        self.proxies = proxies
 
-        retry_backoff_factor = 1.0
-        total_retries = 5
-        connection_timeout = 10
-        read_timeout = 12
-        method_whitelist = ["GET", "POST"]
-
-        retry_strategy = Retry(
-            total=total_retries,
-            backoff_factor=retry_backoff_factor,
-            connect=connection_timeout,
-            read=read_timeout,
-            status_forcelist=[502, 503],
-            allowed_methods=method_whitelist)
         adapter = HTTPAdapter(max_retries=retry_strategy)
-
         http = requests.Session()
         http.mount("https://", adapter)
         http.mount("http://", adapter)
+
+        self.proxies = proxies
         self._http = http
 
     def rpc_addr(self) -> str:
