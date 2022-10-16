@@ -6,4 +6,4 @@ import near_api.transactions
 import near_api.account
 import near_api.signer
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)

@@ -1,17 +1,24 @@
 import itertools
 import json
+import logging
 from typing import Optional
 
 import base58
 
 import near_api
 from near_api import transactions
+from near_api.utils.transactions import tx_retry_with_cool_off
 
 # Amount of gas attached by default 1e14.
 DEFAULT_ATTACHED_GAS = 100_000_000_000_000
+logger = logging.getLogger(__name__)
 
 
 class TransactionError(Exception):
+    pass
+
+
+class RetryExceededError(Exception):
     pass
 
 
@@ -34,17 +41,24 @@ class Account(object):
         self._access_key: dict = provider.get_access_key(
             self._account_id, self._signer.key_pair.encoded_public_key())
 
-    def _sign_and_submit_tx(self, receiver_id: str, actions: list['transactions.Action']) -> dict:
+    def _sign_tx(self, receiver_id: str, actions: list['transactions.Action']):
         self._access_key['nonce'] += 1
         block_hash = self._provider.get_status(
         )['sync_info']['latest_block_hash']
         block_hash = base58.b58decode(block_hash.encode('utf8'))
         serialized_tx = transactions.sign_and_serialize_transaction(
-            receiver_id, self._access_key['nonce'], actions, block_hash, self._signer)
-        result: dict = self._provider.send_tx_and_wait(serialized_tx)
+            receiver_id, self._access_key['nonce'], actions, block_hash,
+            self._signer)
+        return self._provider.send_tx_and_wait(serialized_tx)
+
+    def _sign_and_submit_tx(self, receiver_id: str, actions: list['transactions.Action']) -> dict:
+        result = tx_retry_with_cool_off(self._sign_tx, receiver_id, actions)
+        if not result:
+            raise RetryExceededError('RetriesExceeded: nonce retries exceeded for transaction.')
         for outcome in itertools.chain([result['transaction_outcome']], result['receipts_outcome']):
             for log in outcome['outcome']['logs']:
-                print("Log:", log)
+                logger.info("Log: %s" % log)
+
         if 'Failure' in result['status']:
             raise TransactionError(result['status']['Failure'])
         return result
