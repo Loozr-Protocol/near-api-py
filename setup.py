@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 META_DATA = dict(
     name="lzr-near-api-py",
-    version="0.1.2",
+    version="0.1.3",
     license="MIT",
 
     author="NEAR Inc",
