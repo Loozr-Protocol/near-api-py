@@ -15,6 +15,9 @@ def tx_retry_with_cool_off(callback, receiver_id: str,
             result = callback(receiver_id, actions)
             return result
         except JsonProviderError as err:
+            if not err.is_invalid_nonce_tx_error() and not err.is_expired_tx_error():
+                raise err
+
             time.sleep(delay_time)
             delay_time *= cool_of_factor
     return None
