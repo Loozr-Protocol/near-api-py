@@ -1,5 +1,6 @@
 import base64
 import json
+import time
 from typing import Union, Optional
 import logging
 from urllib3.util import Retry
@@ -11,14 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 def _default_retry_strategy() -> Retry:
-    retry_backoff_factor = 1.0
-    total_retries = 5
-    connection_timeout = 10
-    read_timeout = 15
+    retry_backoff_factor = 0.7
+    connection_timeout = 5
+    read_timeout = 8
     method_whitelist = ["GET", "POST"]
 
     retry_strategy = Retry(
-        total=total_retries,
         backoff_factor=retry_backoff_factor,
         connect=connection_timeout,
         read=read_timeout,
@@ -55,6 +54,12 @@ class JsonProviderError(Exception):
         except (IndexError, KeyError):
             return False
 
+    def is_request_timeout_error(self) -> bool:
+        return (
+            self.get_type() == "HANDLER_ERROR"
+            and self.get_cause() == "TIMEOUT_ERROR"
+        )
+
     def is_expired_tx_error(self) -> bool:
         try:
             return (
@@ -68,7 +73,9 @@ class JsonProviderError(Exception):
 
 class JsonProvider(object):
     def __init__(self, rpc_addr, proxies=None,
-                 retry_strategy: Retry = _default_retry_strategy()):
+                 retry_strategy: Retry = _default_retry_strategy(),
+                 tx_timeout_retry_number: int = 12,
+                 tx_timeout_retry_backoff_factor: float = 1.5,):
         if isinstance(rpc_addr, tuple):
             self._rpc_addr = "http://%s:%s" % rpc_addr
         else:
@@ -82,10 +89,29 @@ class JsonProvider(object):
         self.proxies = proxies
         self._http = http
 
+        self._tx_timeout_retry_number = tx_timeout_retry_number
+        self._tx_timeout_retry_backoff_factor = tx_timeout_retry_backoff_factor
+
     def rpc_addr(self) -> str:
         return self._rpc_addr
 
-    def json_rpc(self, method: str, params: Union[dict, list, str]) -> dict:
+    def json_rpc(self, method: str, params: Union[dict, list, str], timeout: 'TimeoutType' = 2.0) -> dict:
+        attempt = 0
+        while True:
+            try:
+                return self._json_rpc_once(method, params, timeout)
+            except JsonProviderError as e:
+                if attempt >= self._tx_timeout_retry_number:
+                    raise
+                if e.is_request_timeout_error():
+                    logger.warning(
+                        "Retrying request to %s as it has timed out: %s", method, e)
+                else:
+                    raise
+            attempt += 1
+            time.sleep(self._tx_timeout_retry_backoff_factor ** attempt * 0.5)
+
+    def _json_rpc_once(self, method: str, params: Union[dict, list, str], timeout: 'TimeoutType' = 2.0) -> dict:
         j = {
             'method': method,
             'params': params,

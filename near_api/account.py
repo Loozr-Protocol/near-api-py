@@ -1,13 +1,13 @@
 import itertools
 import json
 import logging
+import time
 from typing import Optional
 
 import base58
 
 import near_api
-from near_api import transactions
-from near_api.utils.transactions import tx_retry_with_cool_off
+from near_api import transactions, providers
 
 # Amount of gas attached by default 1e14.
 DEFAULT_ATTACHED_GAS = 100_000_000_000_000
@@ -27,12 +27,13 @@ class ViewFunctionError(Exception):
 
 
 class Account(object):
-
     def __init__(
             self,
             provider: 'near_api.providers.JsonProvider',
             signer: 'near_api.signer.Signer',
-            account_id: Optional[str] = None
+            account_id: Optional[str] = None,
+            tx_nonce_retry_number: int = 12,
+            tx_nonce_retry_backoff_factor: float = 1.5,
     ):
         self._provider = provider
         self._signer = signer
@@ -41,7 +42,10 @@ class Account(object):
         self._access_key: dict = provider.get_access_key(
             self._account_id, self._signer.key_pair.encoded_public_key())
 
-    def _sign_tx(self, receiver_id: str, actions: list['transactions.Action']):
+        self._tx_nonce_retry_number = tx_nonce_retry_number
+        self._tx_nonce_retry_backoff_factor = tx_nonce_retry_backoff_factor
+
+    def _sign_and_submit_tx_once(self, receiver_id: str, actions: list['transactions.Action']):
         self._access_key['nonce'] += 1
         block_hash = self._provider.get_status(
         )['sync_info']['latest_block_hash']
@@ -49,19 +53,35 @@ class Account(object):
         serialized_tx = transactions.sign_and_serialize_transaction(
             receiver_id, self._access_key['nonce'], actions, block_hash,
             self._signer)
-        return self._provider.send_tx_and_wait(serialized_tx)
-
-    def _sign_and_submit_tx(self, receiver_id: str, actions: list['transactions.Action']) -> dict:
-        result = tx_retry_with_cool_off(self._sign_tx, receiver_id, actions)
-        if not result:
-            raise RetryExceededError('RetriesExceeded: nonce retries exceeded for transaction.')
+        result: dict = self._provider.send_tx_and_wait(serialized_tx)
         for outcome in itertools.chain([result['transaction_outcome']], result['receipts_outcome']):
             for log in outcome['outcome']['logs']:
-                logger.info("Log: %s" % log)
-
+                log.info("Log %s: %s", receiver_id, log)
         if 'Failure' in result['status']:
             raise TransactionError(result['status']['Failure'])
         return result
+
+    def _sign_and_submit_tx(self, receiver_id: str, actions: list['transactions.Action']) -> dict:
+        attempt = 0
+        while True:
+            try:
+                return self._sign_and_submit_tx_once(receiver_id, actions)
+            except providers.JsonProviderError as err:
+                if attempt >= self._tx_nonce_retry_number:
+                    raise
+
+                attempt += 1
+
+                if err.is_invalid_nonce_tx_error():
+                    logger.warning(
+                        "Retrying transaction with new nonce: %s", err)
+                    self.fetch_state()
+                elif err.is_expired_tx_error():
+                    logger.warning(
+                        "Retrying transaction due to expired block hash: %s", err)
+                else:
+                    raise
+            time.sleep(self._tx_nonce_retry_backoff_factor ** attempt * 0.5)
 
     @property
     def account_id(self) -> str:
