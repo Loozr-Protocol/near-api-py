@@ -56,7 +56,7 @@ class Account(object):
         result: dict = self._provider.send_tx_and_wait(serialized_tx)
         for outcome in itertools.chain([result['transaction_outcome']], result['receipts_outcome']):
             for log in outcome['outcome']['logs']:
-                log.info("Log %s: %s", receiver_id, log)
+                logger.info("Log %s: %s", receiver_id, log)
         if 'Failure' in result['status']:
             raise TransactionError(result['status']['Failure'])
         return result
